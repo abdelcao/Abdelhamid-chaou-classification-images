@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MobileNet Image Classifier</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f7f9fc;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .upload-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px 20px;
+            margin-bottom: 30px;
+            transition: all 0.3s;
+            background-color: #f9f9f9;
+        }
+        .upload-container:hover, .upload-container.dragover {
+            border-color: #4a90e2;
+            background-color: #f0f7ff;
+        }
+        .upload-container p {
+            margin: 10px 0;
+            color: #666;
+        }
+        #file-upload {
+            display: none;
+        }
+        .upload-btn {
+            background-color: #4a90e2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .upload-btn:hover {
+            background-color: #357abD;
+        }
+        .image-preview {
+            max-width: 100%;
+            margin: 20px 0;
+            text-align: center;
+        }
+        #preview-image {
+            max-width: 400px;
+            max-height: 400px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .results-container {
+            display: none;
+            margin-top: 20px;
+        }
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .result-item:last-child {
+            border-bottom: none;
+        }
+        .class-name {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .confidence-bar-container {
+            width: 60%;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .confidence-bar {
+            height: 20px;
+            background-color: #4a90e2;
+            transition: width 0.5s ease-in-out;
+        }
+        .confidence-value {
+            min-width: 60px;
+            text-align: right;
+            padding-left: 10px;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #4a90e2;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error-message {
+            color: #e74c3c;
+            text-align: center;
+            display: none;
+            margin: 10px 0;
+        }
+        .filename {
+            margin-top: 5px;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MobileNet Image Classifier</h1>
+        
+        <div id="upload-container" class="upload-container">
+            <p>Drag and drop an image or click to browse</p>
+            <input type="file" id="file-upload" accept="image/*">
+            <button id="upload-btn" class="upload-btn">Choose Image</button>
+        </div>
+        
+        <div class="image-preview" id="image-preview-container" style="display: none;">
+            <img id="preview-image" src="" alt="Preview">
+            <div class="filename" id="filename"></div>
+        </div>
+        
+        <div class="loader" id="loader"></div>
+        <div class="error-message" id="error-message"></div>
+        
+        <div class="results-container" id="results-container">
+            <h2>Classification Results</h2>
+            <div id="results-list"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadContainer = document.getElementById('upload-container');
+            const fileUpload = document.getElementById('file-upload');
+            const uploadBtn = document.getElementById('upload-btn');
+            const previewContainer = document.getElementById('image-preview-container');
+            const previewImage = document.getElementById('preview-image');
+            const filenameElement = document.getElementById('filename');
+            const resultsContainer = document.getElementById('results-container');
+            const resultsList = document.getElementById('results-list');
+            const loader = document.getElementById('loader');
+            const errorMessage = document.getElementById('error-message');
+            
+            // API endpoint - Update this with your actual API endpoint
+            const apiUrl = 'http://localhost:8000/predict/';
+            
+            // Handle click on upload button
+            uploadBtn.addEventListener('click', function() {
+                fileUpload.click();
+            });
+            
+            // Handle file selection
+            fileUpload.addEventListener('change', handleFileSelect);
+            
+            // Handle drag and drop
+            uploadContainer.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.classList.add('dragover');
+            });
+            
+            uploadContainer.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.classList.remove('dragover');
+            });
+            
+            uploadContainer.addEventListener('drop', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.classList.remove('dragover');
+                
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                
+                if (files.length) {
+                    fileUpload.files = files;
+                    handleFileSelect({ target: fileUpload });
+                }
+            });
+            
+            function handleFileSelect(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                // Check if file is an image
+                if (!file.type.match('image.*')) {
+                    showError('Please select an image file (JPEG, PNG, etc.)');
+                    return;
+                }
+                
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    // Display preview
+                    previewImage.src = e.target.result;
+                    filenameElement.textContent = file.name;
+                    previewContainer.style.display = 'block';
+                    resultsContainer.style.display = 'none';
+                    errorMessage.style.display = 'none';
+                    
+                    // Send to API
+                    uploadImage(file);
+                };
+                
+                reader.readAsDataURL(file);
+            }
+            
+            function uploadImage(file) {
+                // Show loader
+                loader.style.display = 'block';
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                fetch(apiUrl, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    displayResults(data);
+                })
+                .catch(error => {
+                    showError('Error connecting to the API. Make sure the server is running.');
+                    console.error('Error:', error);
+                })
+                .finally(() => {
+                    loader.style.display = 'none';
+                });
+            }
+            
+            function displayResults(data) {
+                resultsList.innerHTML = '';
+                
+                if (data.predictions && data.predictions.length > 0) {
+                    data.predictions.forEach(prediction => {
+                        const resultItem = document.createElement('div');
+                        resultItem.className = 'result-item';
+                        
+                        const confidencePercent = (prediction.confidence * 100).toFixed(2);
+                        
+                        resultItem.innerHTML = `
+                            <div class="class-name">${prediction.class_name}</div>
+                            <div class="confidence-bar-container">
+                                <div class="confidence-bar" style="width: ${confidencePercent}%"></div>
+                            </div>
+                            <div class="confidence-value">${confidencePercent}%</div>
+                        `;
+                        
+                        resultsList.appendChild(resultItem);
+                    });
+                    
+                    resultsContainer.style.display = 'block';
+                } else {
+                    showError('No predictions returned from the API.');
+                }
+            }
+            
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorMessage.style.display = 'block';
+                resultsContainer.style.display = 'none';
+                loader.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

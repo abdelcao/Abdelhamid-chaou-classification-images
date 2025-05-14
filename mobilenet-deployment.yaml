@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mobilenet-classifier-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mobilenet-classifier
+  template:
+    metadata:
+      labels:
+        app: mobilenet-classifier
+    spec:
+      containers:
+        - name: mobilenet-classifier
+          image: abdelcao/image-classifier-v1
+          ports:
+            - containerPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mobilenet-classifier-service
+spec:
+  selector:
+    app: mobilenet-classifier
+  type: NodePort
+  ports:
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30080
